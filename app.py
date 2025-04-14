@@ -1,142 +1,169 @@
 from flask import Flask, request, render_template, flash, send_from_directory, redirect, url_for
-import tensorflow as tf # استخدام tensorflow لتحميل النموذج
+import tensorflow as tf
 from tensorflow.keras.preprocessing import image
 from werkzeug.utils import secure_filename
 import numpy as np
 import os
 import uuid
-import logging # لإضافة تسجيل أفضل للأخطاء
+import logging
+import requests # <-- تأكد من تثبيت هذه المكتبة (pip install requests)
 
 # إعداد التسجيل الأساسي
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 app = Flask(__name__)
 # !!! هام: غير هذا المفتاح في بيئة الإنتاج !!! استخدم مفتاحًا عشوائيًا وقويًا
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", "change_this_to_a_strong_random_secret_key") # Change this key
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "change_this_to_a_strong_random_secret_key_too") # Change this key
 app.config['UPLOAD_FOLDER'] = 'uploads'
 # app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024 # مثال: 16 ميغابايت
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # --- قاموس التصنيف العلمي الموسع ---
 # !!! ################################################################# !!!
-# !!!   الخطوة الأهم: عدّل هذا القاموس ليحتوي على الـ 13 فئة بالضبط   !!!
+# !!!   تحذير: لا يزال هذا القاموس بحاجة لتحديث ليعكس الـ 13 فئة الصحيحة  !!!
 # !!! ################################################################# !!!
 #
 # 1. ابحث عن أسماء المجلدات الـ 13 في مجلد التدريب (`data/resized/train`).
-# 2. استبدل 'Your_Missing_Class_11_Name', 'Your_Missing_Class_12_Name',
-#    و 'Your_Missing_Class_13_Name' بأسماء المجلدات الثلاثة الفعلية.
-# 3. أضف معلومات التصنيف الصحيحة لهذه الفئات الثلاث.
-# 4. تأكد من أن المفاتيح الـ 10 الأخرى تطابق أيضًا مجلدات التدريب.
+# 2. تأكد من أن هذا القاموس يحتوي على مفتاح لكل اسم مجلد من هذه المجلدات الـ 13.
+# 3. استبدل الأسماء العامة (مثل Pezizales) والمفاتيح المؤقتة بالأسماء الصحيحة.
+# 4. أضف معلومات التصنيف الصحيحة لهذه الفئات.
 # 5. العدد الإجمالي للمفاتيح في هذا القاموس يجب أن يكون 13.
 #
 taxonomy_map = {
-    # --- Basidiomycota / Agaricales ---
+    # --- تأكد من أن هذه المفاتيح تطابق مجلدات التدريب ---
     'Amanita': {
-        'Domain': 'Eukaryota (حقيقيات النوى)', 'Kingdom': 'Fungi (فطريات)', 'Phylum': 'Basidiomycota (فطريات بازيدية)',
-        'Class': 'Agaricomycetes (أغاريقونيات)', 'Order': 'Agaricales (غاريقونيات)', 'Family': 'Amanitaceae (أمانيتية)',
-        'Genus': 'Amanita (أمانيت)', 'Species': 'غير محدد (مستوى الجنس)'
+        'Domain': 'Eukaryota', 'Kingdom': 'Fungi', 'Phylum': 'Basidiomycota', 'Class': 'Agaricomycetes',
+        'Order': 'Agaricales', 'Family': 'Amanitaceae', 'Genus': 'Amanita', 'Note': 'تضم أنواع سامة و صالحة للأكل'
     },
     'Agaricus': {
         'Domain': 'Eukaryota', 'Kingdom': 'Fungi', 'Phylum': 'Basidiomycota', 'Class': 'Agaricomycetes',
-        'Order': 'Agaricales', 'Family': 'Agaricaceae (غاريقية)', 'Genus': 'Agaricus (غاريقون)', 'Species': 'غير محدد'
+        'Order': 'Agaricales', 'Family': 'Agaricaceae', 'Genus': 'Agaricus', 'Note': 'مثل فطر الشامبنيون الشائع'
     },
     'Boletus': {
         'Domain': 'Eukaryota', 'Kingdom': 'Fungi', 'Phylum': 'Basidiomycota', 'Class': 'Agaricomycetes',
-        'Order': 'Boletales (بوليطيات)', 'Family': 'Boletaceae (بوليطية)', 'Genus': 'Boletus (بوليط)', 'Species': 'غير محدد'
-        # ملاحظة: جنس Boletus تم تقسيمه، قد تكون الأنواع الآن في أجناس أخرى. تحقق من صحة البيانات المستخدمة للتدريب.
+        'Order': 'Boletales', 'Family': 'Boletaceae', 'Genus': 'Boletus (sensu lato)', 'Note': 'فطر ذو مسام بدلاً من خياشيم'
     },
     'Cantharellus': {
         'Domain': 'Eukaryota', 'Kingdom': 'Fungi', 'Phylum': 'Basidiomycota', 'Class': 'Agaricomycetes',
-        'Order': 'Cantharellales (كويزيات)', 'Family': 'Cantharellaceae (كويزية)', 'Genus': 'Cantharellus (كويزي)', 'Species': 'غير محدد'
+        'Order': 'Cantharellales', 'Family': 'Cantharellaceae', 'Genus': 'Cantharellus', 'Note': 'معروف باسم فطر الشانتريل'
     },
     'Lactarius': {
         'Domain': 'Eukaryota', 'Kingdom': 'Fungi', 'Phylum': 'Basidiomycota', 'Class': 'Agaricomycetes',
-        'Order': 'Russulales (روسوليات)', 'Family': 'Russulaceae (روسولية)', 'Genus': 'Lactarius (خريق)', 'Species': 'غير محدد'
+        'Order': 'Russulales', 'Family': 'Russulaceae', 'Genus': 'Lactarius', 'Note': 'يفرز سائلاً لبنياً عند الكسر'
     },
-     # --- Basidiomycota / Polyporales ---
     'Ganoderma': {
         'Domain': 'Eukaryota', 'Kingdom': 'Fungi', 'Phylum': 'Basidiomycota', 'Class': 'Agaricomycetes',
-        'Order': 'Polyporales (متعددات المسام)', 'Family': 'Ganodermataceae (غصنية)', 'Genus': 'Ganoderma (غانوديرما)', 'Species': 'غير محدد'
+        'Order': 'Polyporales', 'Family': 'Ganodermataceae', 'Genus': 'Ganoderma', 'Note': 'مثل فطر الريشي الطبي'
     },
     'Trametes': {
         'Domain': 'Eukaryota', 'Kingdom': 'Fungi', 'Phylum': 'Basidiomycota', 'Class': 'Agaricomycetes',
-        'Order': 'Polyporales', 'Family': 'Polyporaceae (بوليبوراسية)', 'Genus': 'Trametes (طرْمِيد)', 'Species': 'غير محدد'
+        'Order': 'Polyporales', 'Family': 'Polyporaceae', 'Genus': 'Trametes', 'Note': 'مثل فطر ذيل الديك الرومي'
     },
-    # --- Basidiomycota / Russulales ---
     'Russula': {
         'Domain': 'Eukaryota', 'Kingdom': 'Fungi', 'Phylum': 'Basidiomycota', 'Class': 'Agaricomycetes',
-        'Order': 'Russulales', 'Family': 'Russulaceae', 'Genus': 'Russula (روسولا)', 'Species': 'غير محدد'
+        'Order': 'Russulales', 'Family': 'Russulaceae', 'Genus': 'Russula', 'Note': 'يتميز بقبعات ملونة وساق قابلة للكسر'
     },
-    # --- Ascomycota ---
-    'Pezizales': { # فئة على مستوى الرتبة
-        'Domain': 'Eukaryota', 'Kingdom': 'Fungi', 'Phylum': 'Ascomycota (فطريات زقية)',
-        'Class': 'Pezizomycetes (فنجانيانية)', 'Order': 'Pezizales (فنجانيات)', 'Family': 'متعددة',
+    # --- هذه المفاتيح التالية قد تحتاج لتغييرها لأسماء مجلدات التدريب الفعلية ---
+    'Pezizales_Placeholder': { # <-- استبدل بالاسم الصحيح للفئة 9
+        'Domain': 'Eukaryota', 'Kingdom': 'Fungi', 'Phylum': 'Ascomycota',
+        'Class': 'Pezizomycetes', 'Order': 'Pezizales', 'Family': 'متعددة',
         'Genus': 'غير محدد (مستوى الرتبة)', 'Species': 'غير محدد'
     },
-    'Erysiphales': { # فئة على مستوى الرتبة (البياض الدقيقي)
+    'Erysiphales_Placeholder': { # <-- استبدل بالاسم الصحيح للفئة 10
         'Domain': 'Eukaryota', 'Kingdom': 'Fungi', 'Phylum': 'Ascomycota',
-        'Class': 'Leotiomycetes (ليوتانيانية)', 'Order': 'Erysiphales (إريسيبيات)', 'Family': 'Erysiphaceae (إريسيبية)',
-        'Genus': 'متعددة (مثل Erysiphe, Podosphaera)', 'Species': 'غير محدد (مستوى الرتبة)'
+        'Class': 'Leotiomycetes', 'Order': 'Erysiphales', 'Family': 'Erysiphaceae',
+        'Genus': 'متعددة', 'Species': 'غير محدد (مستوى الرتبة)'
     },
-     'Saccharomycetales': { # فئة على مستوى الرتبة (الخمائر)
-        'Domain': 'Eukaryota', 'Kingdom': 'Fungi', 'Phylum': 'Ascomycota',
-        'Class': 'Saccharomycetes (سكريانية)', 'Order': 'Saccharomycetales (سكريات)', 'Family': 'متعددة (مثل Saccharomycetaceae)',
-        'Genus': 'متعددة (مثل Saccharomyces)', 'Species': 'غير محدد (مستوى الرتبة)'
+    'Saccharomycetales_Placeholder': { # <-- استبدل بالاسم الصحيح للفئة 11
+         'Domain': 'Eukaryota', 'Kingdom': 'Fungi', 'Phylum': 'Ascomycota',
+         'Class': 'Saccharomycetes', 'Order': 'Saccharomycetales', 'Family': 'متعددة',
+         'Genus': 'متعددة', 'Species': 'غير محدد (مستوى الرتبة)'
     },
-    # --- Glomeromycota ---
-     'Glomeromycota': { # فئة على مستوى الشعبة (الفطريات الجذرية التكافلية)
-        'Domain': 'Eukaryota', 'Kingdom': 'Fungi', 'Phylum': 'Glomeromycota (كبيبيائية)',
-        'Class': 'متعددة', 'Order': 'متعددة', 'Family': 'متعددة',
-        'Genus': 'متعددة (مثل Glomus)', 'Species': 'غير محدد (مستوى الشعبة)'
+    'Glomeromycota_Placeholder': { # <-- استبدل بالاسم الصحيح للفئة 12
+         'Domain': 'Eukaryota', 'Kingdom': 'Fungi', 'Phylum': 'Glomeromycota',
+         'Class': 'متعددة', 'Order': 'متعددة', 'Family': 'متعددة',
+         'Genus': 'متعددة', 'Species': 'غير محدد (مستوى الشعبة)'
     },
-    # --- Others ---
-    'Others': {
+    'Others': { # <-- تأكد من أن 'Others' كان أحد مجلدات التدريب الـ 13
         'Domain': 'غير محدد', 'Kingdom': 'غير محدد', 'Phylum': 'غير محدد',
         'Class': 'غير محدد', 'Order': 'غير محدد', 'Family': 'غير محدد',
-        'Genus': 'غير محدد', 'Species': 'فئة أخرى / غير مصنف'
+        'Genus': 'غير محدد', 'Note': 'فئة أخرى / غير مصنف'
     }
+    # تأكد من أن العدد الإجمالي للمفاتيح هنا هو 13 بالضبط وأنها تطابق مجلدات التدريب
 }
 # --- نهاية قاموس التصنيف ---
 
-# تحميل النموذج المدرب
-# تأكد من أن هذا يطابق اسم النموذج الأساسي الذي استخدمته للتدريب
-MODEL_BASENAME = "VGG16" # أو غيره
-MODEL_PATH = f'fungal_classifier_{MODEL_BASENAME}_best.h5'
+
+# --- تحميل النموذج ---
+# الرابط المباشر الذي قدمته
+MODEL_URL = "https://drive.google.com/uc?export=download&id=1f2YooYzN3fBVLwkemU_jRS82BfqoIHcn"
+MODEL_LOCAL_PATH = "downloaded_model.h5" # اسم الملف الذي سيتم حفظه محليًا
+
 model = None
 model_output_units = -1 # قيمة مبدئية
 
-try:
-    if os.path.exists(MODEL_PATH):
-        model = tf.keras.models.load_model(MODEL_PATH)
-        logging.info(f"Model loaded successfully from {MODEL_PATH}")
+# التحميل فقط إذا لم يكن الملف موجودًا محليًا
+if not os.path.exists(MODEL_LOCAL_PATH):
+    try:
+        logging.info(f"Downloading model from Google Drive...")
+        response = requests.get(MODEL_URL, stream=True)
+        response.raise_for_status() # للتحقق من أخطاء التحميل (مثل 404 Not Found أو 403 Forbidden)
+        with open(MODEL_LOCAL_PATH, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+        logging.info(f"Model downloaded successfully to {MODEL_LOCAL_PATH}")
+    except requests.exceptions.RequestException as download_e:
+        # التعامل مع أخطاء الشبكة أو الرابط بشكل محدد
+        logging.exception(f"Failed to download model due to network/URL error: {download_e}")
+        # model يبقى None
+    except Exception as download_e:
+        # التعامل مع أخطاء أخرى محتملة أثناء التنزيل
+        logging.exception(f"An unexpected error occurred during model download: {download_e}")
+        # model يبقى None
+
+# محاولة تحميل النموذج من الملف المحلي
+if os.path.exists(MODEL_LOCAL_PATH):
+    try:
+        model = tf.keras.models.load_model(MODEL_LOCAL_PATH)
+        logging.info(f"Model loaded successfully from {MODEL_LOCAL_PATH}")
         try:
             output_shape = model.output_shape
             model_output_units = output_shape[-1]
             logging.info(f"Loaded model expects {model_output_units} output units (classes).")
         except Exception as shape_e:
             logging.warning(f"Could not determine model output shape automatically: {shape_e}")
-    else:
-        logging.error(f"Error: Model file not found at {MODEL_PATH}")
-except Exception as e:
-    logging.exception(f"Critical Error loading model from {MODEL_PATH}: {e}")
-    model = None
+    except OSError as load_e:
+        # قد يشير خطأ OSError أحيانًا إلى ملف تالف أو غير مكتمل
+        logging.exception(f"Critical Error loading model (potential file corruption or I/O issue): {load_e}")
+        model = None
+    except Exception as load_e:
+        # التعامل مع أخطاء التحميل الأخرى (مثل نفاد الذاكرة - قد لا يتم التقاطه هنا دائمًا)
+        logging.exception(f"Critical Error loading model: {load_e}")
+        model = None
+else:
+     logging.error(f"Model file could not be downloaded or found at {MODEL_LOCAL_PATH}. Cannot load model.")
+     # model يبقى None
 
-# --- استخراج أسماء الفئات ---
+# --- استخراج أسماء الفئات والتحقق ---
 class_labels = sorted(list(taxonomy_map.keys()))
 logging.info(f"Class labels based on taxonomy map (sorted): {class_labels}")
 num_expected_classes = len(class_labels)
 logging.info(f"Number of classes expected by app based on taxonomy map: {num_expected_classes}")
 
-# التحقق الفوري من التطابق إذا تم تحميل النموذج بنجاح
-if model is not None and model_output_units != -1 and model_output_units != num_expected_classes:
-    logging.error("###########################################################################")
-    logging.error(f"CRITICAL MISMATCH DETECTED ON LOAD:")
-    logging.error(f"  Model output units: {model_output_units}")
-    logging.error(f"  Classes in taxonomy_map: {num_expected_classes}")
-    logging.error("  Please CORRECT the taxonomy_map in app.py to match the model!")
-    logging.error("###########################################################################")
-    # يمكنك اختيار إيقاف التطبيق هنا إذا أردت
-    # raise ValueError("Model output size does not match taxonomy_map size!")
+# التحقق الفوري من التطابق بعد محاولة التحميل
+if model is not None:
+    if model_output_units != -1 and model_output_units != num_expected_classes:
+        logging.error("###########################################################################")
+        logging.error(f"CRITICAL MISMATCH DETECTED ON LOAD:")
+        logging.error(f"  Model output units: {model_output_units}")
+        logging.error(f"  Classes in taxonomy_map: {num_expected_classes}")
+        logging.error("  Please CORRECT the taxonomy_map in app.py to match the model!")
+        logging.error("###########################################################################")
+        # قد ترغب في منع التطبيق من الاستمرار إذا كان النموذج موجودًا ولكن الفئات غير متطابقة
+        model = None # اجعل النموذج None لمنع التشغيل بمعلومات خاطئة
+        logging.error("Model set to None due to class mismatch.")
+elif model is None:
+     logging.warning("Model is None after download/load attempts. Check previous errors.")
 
 
 # --- حجم الصورة المتوقع من قبل النموذج ---
@@ -151,18 +178,18 @@ def upload_file():
     taxonomy_message = None
 
     if request.method == 'POST':
+        # التحقق من تحميل النموذج
         if model is None:
-             flash('خطأ حرج: نموذج التصنيف غير مُحمّل. لا يمكن المتابعة. يرجى مراجعة سجلات الخادم.', 'error')
+             # هذه الرسالة ستظهر إذا فشل تحميل النموذج لأي سبب (تنزيل، تحميل، عدم تطابق)
+             flash('خطأ حرج: نموذج التصنيف غير مُحمّل أو غير متوافق. لا يمكن المتابعة. يرجى مراجعة سجلات الخادم.', 'error')
              return render_template('upload.html', class_labels=class_labels)
 
+        # --- باقي كود معالجة POST ---
         if 'file' not in request.files:
-            flash('لم يتم إرفاق أي ملف.', 'warning')
-            return redirect(request.url)
-
+            flash('لم يتم إرفاق أي ملف.', 'warning'); return redirect(request.url)
         file = request.files['file']
         if file.filename == '':
-            flash('لم يتم اختيار ملف.', 'warning')
-            return redirect(request.url)
+            flash('لم يتم اختيار ملف.', 'warning'); return redirect(request.url)
 
         allowed_extensions = {'png', 'jpg', 'jpeg'}
         file_ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
@@ -179,26 +206,25 @@ def upload_file():
                 img_array_scaled = img_array / 255.0
                 img_batch = np.expand_dims(img_array_scaled, axis=0)
 
-                logging.info(f"Predicting using model: {MODEL_PATH}")
+                # --- التنبؤ باستخدام النموذج المحمل ---
+                # يجب أن يكون model ليس None هنا إذا نجح التحميل والتوافق
+                logging.info(f"Predicting using loaded model...")
                 preds_raw = model.predict(img_batch)[0]
                 logging.info(f"Model produced {len(preds_raw)} probability outputs.")
 
-                # التحقق من التوافق (يجب أن ينجح إذا تم تعديل taxonomy_map)
+                # التحقق من التوافق (للتأكيد مرة أخرى، رغم التحقق عند التحميل)
                 if len(preds_raw) != num_expected_classes:
-                    error_msg = (f'خطأ في التوافق: النموذج أخرج {len(preds_raw)} احتمالات، '
-                                 f'بينما القائمة المتوقعة تحتوي على {num_expected_classes} فئات ({class_labels}). '
-                                 f'هل تم تحديث taxonomy_map في app.py بشكل صحيح ليشمل جميع الفئات الـ {len(preds_raw)} التي يعرفها النموذج؟')
-                    flash(error_msg, 'error')
-                    logging.error(error_msg)
+                    # هذا لا يجب أن يحدث إذا نجح التحقق عند التحميل، لكنه احتياطي
+                    error_msg = (f'خطأ داخلي: عدد مخرجات النموذج ({len(preds_raw)}) لا يطابق عدد الفئات المتوقع ({num_expected_classes}).')
+                    flash(error_msg, 'error'); logging.error(error_msg)
                     if os.path.exists(file_path): os.remove(file_path)
                     return redirect(request.url)
 
-                # ربط الاحتمالات مع أسماء الفئات (يجب أن يكون الطول متطابقًا الآن)
+                # ربط الاحتمالات مع أسماء الفئات (من taxonomy_map)
                 predictions_data = [
                     {'class': label, 'confidence': float(prob) * 100}
                     for label, prob in zip(class_labels, preds_raw)
                 ]
-
                 predictions_data.sort(key=lambda x: x['confidence'], reverse=True)
 
                 top_prediction_label = None
@@ -221,8 +247,7 @@ def upload_file():
                     full_taxonomy_display = taxonomy_map.get(top_prediction_label)
                     if not full_taxonomy_display:
                          warning_msg = f"لم يتم العثور على معلومات تصنيف للفئة المتوقعة '{top_prediction_label}' في القاموس."
-                         taxonomy_message = warning_msg
-                         logging.warning(warning_msg)
+                         taxonomy_message = warning_msg; logging.warning(warning_msg)
                     elif not isinstance(full_taxonomy_display, dict):
                               error_msg = f"خطأ في البيانات: قيمة التصنيف لـ '{top_prediction_label}' ليست قاموسًا."
                               taxonomy_message = error_msg; logging.error(error_msg); full_taxonomy_display = None
@@ -237,11 +262,13 @@ def upload_file():
                 if 'file_path' in locals() and os.path.exists(file_path):
                     try: os.remove(file_path); logging.info(f"Removed corrupted/problematic file: {file_path}")
                     except OSError as remove_error: logging.error(f"Error removing file {file_path}: {remove_error}")
-                return render_template('upload.html', image_url=None, predictions=[], full_taxonomy=None, taxonomy_message="فشلت معالجة الصورة.", class_labels=class_labels)
+                # لا تقم بإعادة التوجيه، اعرض نفس الصفحة مع رسالة خطأ
+                return render_template('upload.html', image_url=image_url_display, predictions=[], full_taxonomy=None, taxonomy_message="فشلت معالجة الصورة.", class_labels=class_labels)
         else:
             flash('نوع الملف غير مسموح به. يرجى رفع صورة بامتداد png, jpg, أو jpeg.', 'error')
             return redirect(request.url)
 
+    # عرض القالب في حالة GET أو بعد معالجة POST
     return render_template(
         'upload.html', image_url=image_url_display, predictions=predictions_display,
         full_taxonomy=full_taxonomy_display, taxonomy_message=taxonomy_message, class_labels=class_labels
@@ -255,4 +282,5 @@ def uploaded_file(filename):
 if __name__ == '__main__':
     # تعيين debug=False للإنتاج
     # استخدم host='0.0.0.0' لجعله متاحًا على شبكتك (استخدم بحذر)
-    app.run(debug=False, host='127.0.0.1', port=5001) # استخدام منفذ 5001 كمثال
+    # Gunicorn سيتجاهل هذا البلوك عند تشغيل app:app
+    app.run(debug=False, host='127.0.0.1', port=5001)
