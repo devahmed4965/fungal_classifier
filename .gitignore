@@ -1,0 +1,31 @@
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment folder
+venv/
+.venv/
+
+# Operating System files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.idea/
+.vscode/
+
+# Data folders (Generally large and not needed for deployment)
+data/
+
+# Temporary uploads folder content (Keep the empty folder structure)
+uploads/*
+!uploads/.gitkeep
+
+# Model file (ONLY if using Option B - download from URL)
+*.h5
+
+# Secrets / Config (Use environment variables instead)
+# config.py
+# .env

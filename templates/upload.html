@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"> <title>تحليل وتصنيف الفطريات</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap" rel="stylesheet"> <style>
+        :root {
+            --primary-color: #4CAF50; /* Green */
+            --secondary-color: #8D6E63; /* Brown */
+            --background-color: #f7f9fc; /* Light grey-blue */
+            --card-background: #ffffff;
+            --text-color: #333;
+            --text-light: #555;
+            --border-color: #e0e0e0;
+            --shadow-color: rgba(0, 0, 0, 0.1);
+            --font-family: 'Cairo', sans-serif;
+        }
+
+        body {
+            font-family: var(--font-family);
+            background-color: var(--background-color);
+            color: var(--text-color);
+            display: flex;
+            justify-content: center;
+            align-items: center; /* Center vertically too */
+            min-height: 100vh;
+            padding: 30px;
+            box-sizing: border-box;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 700px;
+            width: 100%;
+            animation: fadeIn 0.8s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        h1 {
+            color: var(--secondary-color);
+            text-align: center;
+            margin-bottom: 40px;
+            font-weight: 700;
+        }
+        h1 .icon {
+            display: inline-block;
+            margin-left: 10px;
+            font-size: 1.5em; /* Larger icon */
+            vertical-align: middle;
+             filter: grayscale(30%);
+        }
+
+
+        .card {
+            background: var(--card-background);
+            padding: 35px;
+            border-radius: 15px; /* More rounded corners */
+            box-shadow: 0 6px 20px var(--shadow-color);
+            margin-bottom: 30px;
+            border: 1px solid var(--border-color);
+            transition: box-shadow 0.3s ease;
+        }
+        .card:hover {
+             box-shadow: 0 10px 25px rgba(0, 0, 0, 0.12);
+        }
+
+
+        input[type="file"] {
+            display: block;
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px dashed var(--border-color); /* Dashed border */
+            border-radius: 8px;
+            box-sizing: border-box;
+            background-color: #fafafa;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.3s ease, background-color 0.3s ease;
+            margin-bottom: 20px; /* Space before button */
+            color: var(--text-light);
+        }
+        input[type="file"]::file-selector-button { /* Style the default button */
+             display: none; /* Hide it */
+        }
+        input[type="file"]:hover {
+            border-color: var(--primary-color);
+            background-color: #f5f5f5;
+        }
+
+        button[type="submit"] {
+            background: linear-gradient(45deg, var(--primary-color), #66BB6A); /* Gradient background */
+            color: white;
+            padding: 14px 30px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 17px;
+            font-weight: 700; /* Bolder text */
+            font-family: var(--font-family);
+            transition: all 0.3s ease;
+            display: block;
+            width: 100%;
+            box-shadow: 0 4px 10px rgba(76, 175, 80, 0.4);
+        }
+        button[type="submit"]:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 15px rgba(76, 175, 80, 0.5);
+            filter: brightness(1.1);
+        }
+        button[type="submit"]:active {
+             transform: translateY(0px);
+             box-shadow: 0 2px 5px rgba(76, 175, 80, 0.3);
+        }
+
+
+        .result-box h3 {
+            color: var(--secondary-color);
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
+            font-weight: 700;
+        }
+
+        img.preview {
+            max-width: 100%;
+            height: auto;
+            max-height: 350px;
+            margin: 25px auto;
+            display: block;
+            border-radius: 10px; /* Match card radius */
+            border: 1px solid var(--border-color);
+             animation: zoomIn 0.5s ease-out;
+        }
+        @keyframes zoomIn {
+             from { transform: scale(0.95); opacity: 0; }
+             to { transform: scale(1); opacity: 1; }
+        }
+
+        .prediction-item {
+            margin: 10px 0;
+            padding: 12px 15px;
+            background: #fdfdfd;
+            border-radius: 8px;
+            border: 1px solid #f0f0f0;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            opacity: 0; /* Start hidden for animation */
+            animation: slideInUp 0.5s ease-out forwards;
+             animation-delay: calc(var(--i, 0) * 0.1s); /* Stagger animation */
+        }
+        .prediction-item:hover {
+             transform: scale(1.02);
+             box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+        }
+
+        .prediction-item.top {
+            background: linear-gradient(to right, #e8f5e9, var(--card-background)); /* Subtle green gradient */
+            border-left: 5px solid var(--primary-color);
+            font-weight: 700;
+        }
+
+        @keyframes slideInUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+
+        .prediction-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 0.95em;
+        }
+        .prediction-header span { /* Class name */
+            color: var(--text-color);
+             font-weight: bold;
+        }
+         .prediction-header strong { /* Confidence */
+            color: var(--primary-color);
+            font-weight: bold;
+        }
+         .prediction-item.top .prediction-header strong {
+             font-size: 1.1em; /* Emphasize top confidence */
+         }
+
+
+        .confidence-bar {
+            height: 8px;
+            background: #eee;
+            border-radius: 10px;
+            overflow: hidden;
+             margin-top: 5px;
+        }
+        .confidence-fill {
+            height: 100%;
+            background: var(--primary-color);
+            width: 0; /* Set by JS */
+            transition: width 1s cubic-bezier(0.25, 1, 0.5, 1); /* Smoother easing */
+            border-radius: 10px;
+        }
+
+        /* Taxonomy details */
+        .taxonomy-details {
+            margin-top: 30px;
+            padding-top: 25px;
+            border-top: 1px dashed var(--border-color); /* Dashed separator */
+            animation: fadeIn 0.6s ease-out 0.5s backwards; /* Delayed fade in */
+        }
+        .taxonomy-details h3 {
+            color: var(--secondary-color);
+            margin-bottom: 20px;
+            padding-bottom: 0; /* Remove border from h3 */
+            border-bottom: none;
+        }
+        .taxonomy-details ul { list-style: none; padding-right: 0; }
+        .taxonomy-details li {
+            margin-bottom: 12px;
+            font-size: 0.9em;
+            color: var(--text-light);
+             display: flex; /* Use flex for alignment */
+            justify-content: space-between;
+        }
+        .taxonomy-details strong { /* Rank name */
+             color: var(--text-color);
+             font-weight: bold;
+             margin-left: 8px; /* Space after rank */
+        }
+         .taxonomy-details span { /* Rank value */
+             text-align: left;
+             flex-grow: 1;
+         }
+
+
+        /* Flash messages styling */
+        .flash { padding: 15px 20px; margin-bottom: 25px; border: 1px solid transparent; border-radius: 8px; text-align: center; font-weight: bold; animation: fadeIn 0.5s ease-out; }
+        .flash.error { color: #D8000C; background-color: #FFD2D2; border-color: #FFB8B8; }
+        .flash.success { color: #4F8A10; background-color: #DFF2BF; border-color: #BDE5A6; }
+        .flash.warning { color: #9F6000; background-color: #FEEFB3; border-color: #FFDF70; }
+
+         .taxonomy-message {
+            margin-top: 15px;
+            padding: 12px 18px;
+            background-color: #FFF3CD; /* Light yellow */
+            border: 1px solid #FFEEBA;
+            color: #856404; /* Darker yellow/brown */
+            border-radius: 8px;
+            text-align: center;
+             font-size: 0.9em;
+        }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card upload-box">
+            <h1><span class="icon">🍄</span> نظام تحليل وتصنيف الفطريات</h1>
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+              {% if messages %}
+                {% for category, message in messages %}
+                  <div class="flash {{ category }}">{{ message }}</div>
+                {% endfor %}
+              {% endif %}
+            {% endwith %}
+
+            <form method="post" enctype="multipart/form-data">
+                <input type="file" name="file" accept="image/png, image/jpeg, image/jpg" required title="اختر صورة فطر للتحليل">
+                <button type="submit">🚀 بدء التحليل</button>
+            </form>
+        </div>
+
+        {% if image_url or predictions %}
+        <div class="card result-box">
+            {% if image_url %}
+                <h3>الصورة المرفوعة</h3>
+                <img src="{{ url_for('uploaded_file', filename=image_url) }}" class="preview" alt="صورة الفطر المرفوعة">
+            {% endif %}
+
+            {% if predictions %}
+                <h3>نتائج التصنيف</h3>
+                {% for pred in predictions %}
+                <div class="prediction-item {% if pred.is_top %}top{% endif %}" style="--i: {{ loop.index0 }};">
+                    <div class="prediction-header">
+                        <span>{{ pred.class }}</span>
+                        <strong>{{ pred.confidence }}</strong>
+                    </div>
+                    <div class="confidence-bar">
+                        <div class="confidence-fill" data-width="{{ pred.confidence }}"></div>
+                    </div>
+                </div>
+                {% endfor %}
+
+                <div class="taxonomy-details">
+                    <h3>التصنيف العلمي التفصيلي</h3>
+                    {% if full_taxonomy %}
+                        <ul>
+                            {% for rank, value in full_taxonomy.items() %}
+                              <li><strong>{{ rank }}:</strong> <span>{{ value }}</span></li>
+                            {% endfor %}
+                        </ul>
+                    {% elif taxonomy_message %}
+                        <p class="taxonomy-message">{{ taxonomy_message }}</p>
+                    {% else %}
+                         <p><i>لم يتم تحديد تصنيف.</i></p>
+                    {% endif %}
+                </div>
+                {% elif not image_url and request.method == 'POST' %}
+                 <p>لم يتم تحليل أي صورة أو حدث خطأ.</p>
+            {% endif %}
+        </div>
+        {% endif %}
+
+         <footer style="text-align: center; margin-top: 30px; font-size: 0.85em; color: #888;">
+             نظام تجريبي لتصنيف الفطريات - إصدار 1.0
+         </footer>
+
+    </div> <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // Animate confidence bars
+            document.querySelectorAll('.confidence-fill').forEach(bar => {
+                const targetWidth = bar.getAttribute('data-width');
+                // Ensure animation starts after initial render
+                requestAnimationFrame(() => {
+                     setTimeout(() => {
+                        bar.style.width = targetWidth;
+                     }, 150); // Slightly longer delay
+                });
+            });
+
+            // Optional: Update file input text on file selection
+            const fileInput = document.querySelector('input[type="file"]');
+            if (fileInput) {
+                 fileInput.addEventListener('change', function() {
+                     const fileName = this.files[0]?.name;
+                     // You could update a label or title here if needed,
+                     // but the default browser behavior often shows the filename.
+                     console.log("File selected:", fileName);
+                 });
+            }
+        });
+    </script>
+</body>
+</html>
